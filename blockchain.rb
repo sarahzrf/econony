@@ -4,13 +4,8 @@ require 'digest/sha1'
 # of id => block
 
 module Blockchain
-	InitialDifficulty = 5_000_000_000_000_000
-
-	def self.difficulty
-		years = Date.today.year - 2014
-		p2 = 2**years
-		InitialDifficulty * p2
-	end
+	InitialDifficulty = 10**41
+	Difficulty = InitialDifficulty / 2**(Date.today.year - 2014)
 
 	def self.block(id)
 		(@chain ||= {})[id]
@@ -20,20 +15,24 @@ module Blockchain
 		attr_reader :txns, :prev, :timestamp, :nonce
 
 		def initialize(txns, prev, timestamp, nonce)
-			@txns, @prev, @timestamp, @nonce = txns, prev, timestamp, nonce
+			@txns = txns
+			@prev = prev
+			@timestamp = timestamp.to_i
+			@nonce = nonce
 		end
 
-		def id
-			Digest::SHA1.hexdigest(
-				nonce + prev + timestamp + txns.join)
+		def hash
+			@hash ||= Digest::SHA1.hexdigest(
+				nonce.to_s << prev << timestamp.to_s <<
+				txns.map(&:hash).inject('', :<<)).hex
 		end
 
 		def valid?
-			id.hex < Blockchain.difficulty
+			hash < Blockchain::Difficulty
 		end
 
-		def to_s
-			"#<Block 0x#{id}>"
+		def inspect
+			"#<Block 0x#{hash.to_s 16}>"
 		end
 	end
 end
