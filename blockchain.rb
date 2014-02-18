@@ -1,3 +1,4 @@
+require 'date'
 require_relative 'sha1'
 require_relative 'signature'
 

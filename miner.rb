@@ -11,8 +11,8 @@ until b.valid?
 		nonce += 1
 	end
 	b = Blockchain::Block.new([], empty, Time.now, nonce)
-	if b.hash < lowest
-		p lowest = b.hash
+	if b.hash.hex < lowest
+		p lowest = b.hash.hex
 		#binding.pry
 	end
 end
