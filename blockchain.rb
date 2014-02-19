@@ -146,7 +146,7 @@ SQL
 				return false unless source = can_source?(input)
 				source.last
 			end
-			@outputs.map(&:last).sum <= source_amts.sum
+			@outputs.map(&:last).inject(:+) <= source_amts.inject(:+)
 		end
 	end
 
@@ -183,7 +183,7 @@ SQL
 		def valid?
 			unless @prev == MagicHash
 				prev = Block[@prev]
-				prev_ok = prev and @prev.timestamp < @timestamp
+				prev_ok = prev and prev.timestamp < @timestamp
 			else
 				prev_ok = true
 			end

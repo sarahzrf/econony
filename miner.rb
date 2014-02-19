@@ -1,9 +1,9 @@
 require './blockchain'
 pubkey = nil # put some way of acquiring the genesis miner's pubkey here
-txn = Blockchain::Transaction.new [[BlockChain::MagicHash, 0]], [[pubkey.sha1, 64]], Time.now.to_i
+txn = Blockchain::Transaction.new [[Blockchain::MagicHash, 0]], [[pubkey.sha1, 64]], Time.now.to_i
 nonce = 0
 lowest = Float::INFINITY
-genesis = Blockchain::Block.new([txn], Blockchain::MagicHash, Time.now, nonce)
+genesis = Blockchain::Block.new([txn], Blockchain::MagicHash, Time.now.to_i, nonce)
 until genesis.publishable?
 	if nonce > 4294967296
 		nonce = 0
