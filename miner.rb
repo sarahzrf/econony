@@ -15,6 +15,7 @@ until genesis.valid?
 		p lowest = genesis.hash.hex
 	end
 end
+genesis.apply!
 
 # vim:tabstop=2 shiftwidth=2 noexpandtab:
 
