@@ -1,19 +1,18 @@
-require 'pry'
 require './blockchain'
-lowest = Float::INFINITY
+pubkey = nil # put some way of acquiring the genesis miner's pubkey here
+txn = Blockchain::Transaction.new [[BlockChain::MagicHash, 0]], [[pubkey.sha1, 64]], Time.now.to_i
 nonce = 0
-empty = ''.sha1
-b = Blockchain::Block.new([], empty, Time.now, nonce)
-until b.valid?
+lowest = Float::INFINITY
+genesis = Blockchain::Block.new([txn], Blockchain::MagicHash, Time.now, nonce)
+until genesis.valid?
 	if nonce > 4294967296
 		nonce = 0
 	else
 		nonce += 1
 	end
-	b = Blockchain::Block.new([], empty, Time.now, nonce)
-	if b.hash.hex < lowest
-		p lowest = b.hash.hex
-		#binding.pry
+	genesis = Blockchain::Block.new([txn], Blockchain::MagicHash, Time.now.to_i, nonce)
+	if genesis.hash.hex < lowest
+		p lowest = genesis.hash.hex
 	end
 end
 
