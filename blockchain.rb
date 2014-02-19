@@ -106,6 +106,7 @@ SQL
 		end
 
 		def valid?
+			return false if not coinbase? and not signed?
 			@valid ||= uncached_valid?
 		end
 
@@ -114,9 +115,9 @@ SQL
 		end
 
 		def coinbase?
-			@coinbase ||= @inputs == CoinbaseInputs and
+			@coinbase ||= (@inputs == CoinbaseInputs and
 				@outputs.one? and
-				@outputs.first.last <= Blockchain.reward_at(@timestamp)
+				@outputs.first.last <= Blockchain.reward_at(@timestamp))
 		end
 
 		def hash
@@ -135,6 +136,14 @@ SQL
 
 		def inspect
 			"#<Transaction 0x#{hash}>"
+		end
+
+		def marshal_dump
+			[inputs, outputs, timestamp, signature]
+		end
+
+		def marshal_load(attrs)
+			@inputs, @outputs, @timestamp, @signature = attrs
 		end
 
 		private
@@ -170,7 +179,7 @@ SQL
 		attr_reader :txns, :prev, :timestamp, :nonce
 
 		def initialize(*args)
-			raise ArgumentError unless args.length == 4
+			raise ArgumentError unless args.length == 5
 			@txns, @prev, @timestamp, @nonce = args
 		end
 
@@ -180,6 +189,15 @@ SQL
 								 @txns.map(&:hash).inject('', :<<)).sha1
 		end
 
+		def index
+			@index ||= unless @prev == MagicHash
+				prev = Block[@prev]
+				prev and prev.index + 1
+			else
+				0
+			end
+		end
+
 		def valid?
 			unless @prev == MagicHash
 				prev = Block[@prev]
@@ -187,11 +205,11 @@ SQL
 			else
 				prev_ok = true
 			end
-			@valid ||= prev_ok and
+			@valid ||= (prev_ok and
 				@txns.all? {|txn| txn.timestamp < @timestamp} and
 				consistent? and
 				@txns.all?(&:valid?) and
-				@txns.count(&:coinbase?) < 2
+				@txns.count(&:coinbase?) < 2)
 		end
 
 		def publishable?
@@ -207,6 +225,14 @@ SQL
 			"#<Block 0x#{hash}>"
 		end
 
+		def marshal_dump
+			[txns, prev, timestamp, nonce, index]
+		end
+
+		def marshal_load(attrs)
+			@txns, @prev, @timestamp, @nonce, @index = attrs
+		end
+  
 		private
 
 		def consistent?

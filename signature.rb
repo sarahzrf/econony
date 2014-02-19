@@ -30,10 +30,10 @@ class Signature
 end
 
 module Signable
-	attr_accessor :signature
+	attr_reader :signature
 
 	def sign(privkey)
-		self.signature = Signature.signature_for self, privkey
+		@signature = Signature.signature_for self, privkey
 	end
 
 	def signed?
