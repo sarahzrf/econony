@@ -1,5 +1,9 @@
 require './blockchain'
-pubkey = nil # put some way of acquiring the genesis miner's pubkey here
+print "Please enter the name of a file containing your private key: "
+fn = gets.strip
+print "Please enter your passphrase, if any: "
+pp = gets.strip
+pubkey = OpenSSL::PKey::RSA.new(File.read(fn), pp).public_key.to_s
 txn = Blockchain::Transaction.new [[Blockchain::MagicHash, 0]], [[pubkey.sha1, 64]], Time.now.to_i
 nonce = 0
 lowest = Float::INFINITY

@@ -2,6 +2,7 @@ require 'date'
 require 'sequel'
 require_relative 'sha1'
 require_relative 'signature'
+require_relative 'sizedcache'
 
 # the blockchain will be stored as a hash
 # of id => block, probably backed by the FS
@@ -160,11 +161,14 @@ SQL
 	end
 
 	class Block
+		BlockCache = SizedCache.new 20
+
 		def self.[] id
+			return block if block = BlockCache[id]
 			fn = File.join ChainDir, "block_#{id}.dat"
 			return nil unless File.exists? fn
 			File.open fn do |file|
-				Marshal.load file
+				BlockCache[id] = Marshal.load file
 			end
 		end
 
@@ -179,7 +183,7 @@ SQL
 		attr_reader :txns, :prev, :timestamp, :nonce
 
 		def initialize(*args)
-			raise ArgumentError unless args.length == 5
+			raise ArgumentError unless args.length == 4
 			@txns, @prev, @timestamp, @nonce = args
 		end
 
