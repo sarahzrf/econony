@@ -4,7 +4,7 @@ txn = Blockchain::Transaction.new [[BlockChain::MagicHash, 0]], [[pubkey.sha1, 6
 nonce = 0
 lowest = Float::INFINITY
 genesis = Blockchain::Block.new([txn], Blockchain::MagicHash, Time.now, nonce)
-until genesis.valid?
+until genesis.publishable?
 	if nonce > 4294967296
 		nonce = 0
 	else

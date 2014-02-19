@@ -10,7 +10,7 @@ module Blockchain
 	InitialDifficulty = 10**40 * 5
 	Difficulty = InitialDifficulty / 2**(Time.now.year - 2014)
 	InitialReward = 64
-	
+
 	MagicHash = ''.sha1
 
 	ChainDir = File.expand_path '../chain', __FILE__
@@ -191,8 +191,11 @@ SQL
 				@txns.all? {|txn| txn.timestamp < @timestamp} and
 				consistent? and
 				@txns.all?(&:valid?) and
-				@txns.count(&:coinbase?) < 2 and
-				hash.hex < Blockchain::Difficulty
+				@txns.count(&:coinbase?) < 2
+		end
+
+		def publishable?
+			valid? and hash.hex < Blockchain::Difficulty
 		end
 
 		def apply!
