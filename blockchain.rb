@@ -4,12 +4,8 @@ require_relative 'sha1'
 require_relative 'signature'
 require_relative 'sizedcache'
 
-# the blockchain will be stored as a hash
-# of id => block, probably backed by the FS
-
 module Blockchain
 	InitialDifficulty = 10**40 * 5
-	Difficulty = InitialDifficulty / 2**(Time.now.year - 2014)
 	InitialReward = 64
 
 	MagicHash = ''.sha1
@@ -18,7 +14,12 @@ module Blockchain
 
 	module_function
 
-	def reward_at(time)
+	def difficulty(time=Time.now)
+		time = Time.at time if time.is_a? Numeric
+		InitialDifficulty / 2**(Time.now.year - 2014)
+	end
+
+	def reward(time=Time.now)
 		time = Time.at time if time.is_a? Numeric
 		InitialReward / 2**(time.year - 2014)
 	end
@@ -118,7 +119,7 @@ SQL
 		def coinbase?
 			@coinbase ||= (@inputs == CoinbaseInputs and
 				@outputs.one? and
-				@outputs.first.last <= Blockchain.reward_at(@timestamp))
+				@outputs.first.last <= Blockchain.reward(@timestamp))
 		end
 
 		def hash
@@ -164,7 +165,8 @@ SQL
 		BlockCache = SizedCache.new 20
 
 		def self.[] id
-			return block if block = BlockCache[id]
+			block = BlockCache[id]
+			return block if block
 			fn = File.join ChainDir, "block_#{id}.dat"
 			return nil unless File.exists? fn
 			File.open fn do |file|
@@ -188,18 +190,15 @@ SQL
 		end
 
 		def hash
-			@hash ||= (@nonce.to_s << prev.to_s <<
+			@hash ||= (@nonce.to_s << prev <<
 								 @timestamp.to_s <<
 								 @txns.map(&:hash).inject('', :<<)).sha1
 		end
 
+		# gotta cache which blockchain is latest
+
 		def index
-			@index ||= unless @prev == MagicHash
-				prev = Block[@prev]
-				prev and prev.index + 1
-			else
-				0
-			end
+			@index ||= uncached_index
 		end
 
 		def valid?
@@ -213,11 +212,12 @@ SQL
 				@txns.all? {|txn| txn.timestamp < @timestamp} and
 				consistent? and
 				@txns.all?(&:valid?) and
-				@txns.count(&:coinbase?) < 2)
+				@txns.count(&:coinbase?) < 2 and
+				@index == uncached_index)
 		end
 
 		def publishable?
-			valid? and hash.hex < Blockchain::Difficulty
+			valid? and hash.hex < Blockchain.difficulty(@timestamp)
 		end
 
 		def apply!
@@ -236,7 +236,7 @@ SQL
 		def marshal_load(attrs)
 			@txns, @prev, @timestamp, @nonce, @index = attrs
 		end
-  
+
 		private
 
 		def consistent?
@@ -248,6 +248,16 @@ SQL
 			end
 			true
 		end
+
+		def uncached_index
+			unless @prev == MagicHash
+				prev = Block[@prev]
+				prev and prev.index + 1
+			else
+				0
+			end
+		end
+
 	end
 end
 
