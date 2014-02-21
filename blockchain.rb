@@ -1,4 +1,3 @@
-require 'date'
 require 'sequel'
 require_relative 'sha1'
 require_relative 'signature'
@@ -44,21 +43,22 @@ module Blockchain
 				return nil unless input.length == 2
 				txn, which = input
 				raw = cache_db[<<SQL, txn, which].first
-SELECT target, amount
+SELECT target, amount_n, amount_d
   FROM outputs
   WHERE transaction_hash = ? AND
         which = ?;
 SQL
-				raw and [raw[:target], raw[:amount]]
+				raw and [raw[:target], Rational(raw[:amount_n], raw[:amount_d])]
 			end
 
 			def cache(which, hash, output)
 				return unless output.length == 2
 				target, amount = output
-				raw = cache_db[<<SQL, hash, which, target, amount].first
+				cols = hash, which, target, amount.numerator, amount.denominator
+				raw = cache_db[<<SQL, *cols].first
 INSERT
   INTO outputs
-	VALUES (?, ?, ?, ?);
+	VALUES (?, ?, ?, ?, ?);
 SQL
 			end
 
@@ -87,7 +87,8 @@ CREATE TABLE outputs
   (transaction_hash text NOT NULL,
    which int NOT NULL,
    target text NOT NULL,
-   amount float NOT NULL);
+   amount_n int NOT NULL,
+   amount_d int NOT NULL);
 SQL
 				end
 				@cache_db
@@ -96,12 +97,11 @@ SQL
 
 		attr_reader :inputs, :outputs, :timestamp
 
-		def initialize(*args)
-			raise ArgumentError unless args.length == 3
-			@inputs, @outputs, @timestamp = args
+		def initialize(inputs, outputs, timestamp)
+			@inputs, @outputs, @timestamp = inputs, outputs, timestamp
 		end
 
-		def can_source?(input)
+		def cached_source(input)
 			cached = Transaction.cached(input) and
 				cached.first == pubkey.sha1 and
 				cached
@@ -154,7 +154,7 @@ SQL
 			return true if coinbase?
 			return false unless signed?
 			source_amts = @inputs.map do |input|
-				return false unless source = can_source?(input)
+				return false unless source = cached_source(input)
 				source.last
 			end
 			@outputs.map(&:last).inject(:+) <= source_amts.inject(:+)
@@ -162,23 +162,29 @@ SQL
 	end
 
 	class Block
-		BlockCache = SizedCache.new 20
-
-		def self.[] id
-			block = BlockCache[id]
-			return block if block
-			fn = File.join ChainDir, "block_#{id}.dat"
-			return nil unless File.exists? fn
-			File.open fn do |file|
-				BlockCache[id] = Marshal.load file
+		class << self
+			def [] id
+				block = block_cache[id]
+				return block if block
+				fn = File.join ChainDir, "block_#{id}.dat"
+				return nil unless File.exists? fn
+				File.open fn do |file|
+					block_cache[id] = Marshal.load file
+				end
 			end
-		end
 
-		def self.[]= id, block
-			Dir.mkdir ChainDir unless File.exists? ChainDir
-			fn = File.join ChainDir, "block_#{id}.dat"
-			File.open fn, 'w' do |file|
-				file.write Marshal.dump block
+			def []= id, block
+				Dir.mkdir ChainDir unless File.exists? ChainDir
+				fn = File.join ChainDir, "block_#{id}.dat"
+				File.open fn, 'w' do |file|
+					file.write Marshal.dump block
+				end
+			end
+
+			private
+
+			def block_cache
+				@block_cache ||= SizedCache.new 20
 			end
 		end
 
@@ -209,11 +215,11 @@ SQL
 				prev_ok = true
 			end
 			@valid ||= (prev_ok and
-				@txns.all? {|txn| txn.timestamp < @timestamp} and
-				consistent? and
-				@txns.all?(&:valid?) and
-				@txns.count(&:coinbase?) < 2 and
-				@index == uncached_index)
+									@txns.all? {|txn| txn.timestamp < @timestamp} and
+									consistent? and
+									@txns.all?(&:valid?) and
+									@txns.count(&:coinbase?) < 2 and
+									@index == uncached_index)
 		end
 
 		def publishable?

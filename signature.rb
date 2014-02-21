@@ -19,13 +19,20 @@ class Signature
 	end
 
 	def signs?(thing)
-		if thing.is_a? Numeric
+		case thing
+		when String
+			hash = thing
+		when Numeric
 			hash = thing.to_s(16)
 		else
 			hash = thing.hash
 		end
-		key = OpenSSL::PKey::RSA.new @pubkey
-		key.public_decrypt(@signed_hash) == hash
+		begin
+			key = OpenSSL::PKey::RSA.new @pubkey
+			key.public_decrypt(@signed_hash) == hash
+		rescue OpenSSL::PKey::RSAError
+			false
+		end
 	end
 end
 
