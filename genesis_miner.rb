@@ -19,7 +19,7 @@ until genesis.publishable?
 		p lowest = genesis.hash.hex
 	end
 end
-genesis.apply!
+genesis.apply
 
 # vim:tabstop=2 shiftwidth=2 noexpandtab:
 

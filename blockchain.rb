@@ -1,3 +1,4 @@
+require 'zlib'
 require 'sequel'
 require_relative 'sha1'
 require_relative 'signature'
@@ -11,25 +12,58 @@ module Blockchain
 
 	ChainDir = File.expand_path '../chain', __FILE__
 
-	module_function
+	class << self
+		def difficulty(time=Time.now)
+			time = Time.at time if time.is_a? Numeric
+			InitialDifficulty / 2**(time.year - 2014)
+		end
 
-	def difficulty(time=Time.now)
-		time = Time.at time if time.is_a? Numeric
-		InitialDifficulty / 2**(Time.now.year - 2014)
-	end
+		def reward(time=Time.now)
+			time = Time.at time if time.is_a? Numeric
+			InitialReward / 2**(time.year - 2014)
+		end
 
-	def reward(time=Time.now)
-		time = Time.at time if time.is_a? Numeric
-		InitialReward / 2**(time.year - 2014)
-	end
+		def each_block
+			return to_enum :each_block unless block_given?
+			chain.each do |id|
+				yield Block[id]
+			end
+		end
 
-	def each_block
-		return to_enum :each_block unless block_given?
-		return unless File.exists? ChainDir
-		Dir.entries(ChainDir).each do |fn|
-			fn =~ /block_(\w+)\.dat/
-			next unless $1
-			yield Block[$1]
+		def chain
+			@chain ||= load_chain
+		end
+
+		def [] index
+			Block[chain[index]]
+		end
+
+		def []= index, block
+			chain[index] = block.hash
+			dump_chain
+			block
+		end
+
+		private
+
+		def dump_chain
+			fn = File.join ChainDir, 'chain.dat'
+			File.open fn, 'w' do |file|
+				writer = Zlib::GzipWriter.new file
+				Marshal.dump chain, writer
+				writer.close
+			end
+		end
+
+		def load_chain
+			fn = File.join ChainDir, 'chain.dat'
+			return [] unless File.exists? fn
+			File.open fn do |file|
+				reader = Zlib::GzipReader.new file
+				chain = Marshal.load reader
+				reader.close
+				chain
+			end
 		end
 	end
 
@@ -78,7 +112,7 @@ SQL
 			def cache_db
 				return @cache_db if @cache_db
 				Dir.mkdir ChainDir unless File.exists? ChainDir
-				fn = File.join(ChainDir, 'output_cache.sqlite')
+				fn = File.join ChainDir, 'output_cache.sqlite'
 				exists = File.exists? fn
 				@cache_db = Sequel.sqlite fn
 				unless exists
@@ -127,7 +161,7 @@ SQL
 								 @outputs.map {|id, n| id + n.to_s}.inject('', :<<)).sha1
 		end
 
-		def apply!
+		def apply
 			@inputs.each do |input|
 				Transaction.decache input
 			end
@@ -163,22 +197,32 @@ SQL
 
 	class Block
 		class << self
+			def chain
+				@chain ||= load_chain
+			end
+
 			def [] id
 				block = block_cache[id]
 				return block if block
 				fn = File.join ChainDir, "block_#{id}.dat"
 				return nil unless File.exists? fn
 				File.open fn do |file|
-					block_cache[id] = Marshal.load file
+					reader = Zlib::GzipReader.new file
+					block = block_cache[id] = Marshal.load reader
+					reader.close
 				end
+				block
 			end
 
 			def []= id, block
 				Dir.mkdir ChainDir unless File.exists? ChainDir
 				fn = File.join ChainDir, "block_#{id}.dat"
 				File.open fn, 'w' do |file|
-					file.write Marshal.dump block
+					writer = Zlib::GzipWriter.new file
+					Marshal.dump block, writer
+					writer.close
 				end
+				block
 			end
 
 			private
@@ -210,25 +254,26 @@ SQL
 		def valid?
 			unless @prev == MagicHash
 				prev = Block[@prev]
-				prev_ok = prev and prev.timestamp < @timestamp
+				prev_ok = prev and prev.timestamp <= @timestamp
 			else
 				prev_ok = true
 			end
 			@valid ||= (prev_ok and
-									@txns.all? {|txn| txn.timestamp < @timestamp} and
+									@txns.all? {|txn| txn.timestamp <= @timestamp} and
 									consistent? and
 									@txns.all?(&:valid?) and
 									@txns.count(&:coinbase?) < 2 and
-									@index == uncached_index)
+									index == uncached_index)
 		end
 
 		def publishable?
-			valid? and hash.hex < Blockchain.difficulty(@timestamp)
+			valid? and hash.hex <= Blockchain.difficulty(@timestamp)
 		end
 
-		def apply!
+		def apply
 			Block[hash] = self
-			@txns.each &:apply!
+			Blockchain[@index] = self
+			@txns.each &:apply
 		end
 
 		def inspect
@@ -263,7 +308,6 @@ SQL
 				0
 			end
 		end
-
 	end
 end
 
