@@ -34,6 +34,16 @@ class Signature
 			false
 		end
 	end
+
+	def to_json(*args)
+		{signed_hash: signed_hash,
+	 pubkey: pubkey}.to_json(*args)
+	end
+
+	def self.from_json(attrs)
+		@signed_hash = attrs['signed_hash']
+		@pubkey = attrs['pubkey']
+	end
 end
 
 module Signable

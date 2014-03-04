@@ -1,8 +1,19 @@
+require 'json'
 require 'zlib'
 require 'sequel'
 require_relative 'sha1'
 require_relative 'signature'
 require_relative 'sizedcache'
+
+class Rational
+	def to_json(*args)
+		{n: numerator, d: denominator}.to_json(*args)
+	end
+
+	def self.from_json(attrs)
+		Rational attrs['n'], attrs['d']
+	end
+end
 
 module Blockchain
 	InitialDifficulty = 10**40 * 5
@@ -50,7 +61,7 @@ module Blockchain
 			fn = File.join ChainDir, 'chain.dat'
 			File.open fn, 'w' do |file|
 				writer = Zlib::GzipWriter.new file
-				Marshal.dump chain, writer
+				writer.write JSON.dump chain
 				writer.close
 			end
 		end
@@ -60,7 +71,7 @@ module Blockchain
 			return [] unless File.exists? fn
 			File.open fn do |file|
 				reader = Zlib::GzipReader.new file
-				chain = Marshal.load reader
+				chain = JSON.parse reader.read
 				reader.close
 				chain
 			end
@@ -78,9 +89,9 @@ module Blockchain
 				txn, which = input
 				raw = cache_db[<<SQL, txn, which].first
 SELECT target, amount_n, amount_d
-  FROM outputs
-  WHERE transaction_hash = ? AND
-        which = ?;
+	FROM outputs
+	WHERE transaction_hash = ? AND
+				which = ?;
 SQL
 				raw and [raw[:target], Rational(raw[:amount_n], raw[:amount_d])]
 			end
@@ -91,7 +102,7 @@ SQL
 				cols = hash, which, target, amount.numerator, amount.denominator
 				raw = cache_db[<<SQL, *cols].first
 INSERT
-  INTO outputs
+	INTO outputs
 	VALUES (?, ?, ?, ?, ?);
 SQL
 			end
@@ -101,9 +112,9 @@ SQL
 				txn, which = input
 				cache_db[<<SQL, txn, which].all
 DELETE
-  FROM outputs
-  WHERE transaction_hash = ? AND
-        which = ?;
+	FROM outputs
+	WHERE transaction_hash = ? AND
+				which = ?;
 SQL
 			end
 
@@ -118,11 +129,11 @@ SQL
 				unless exists
 					@cache_db[<<SQL].all
 CREATE TABLE outputs
-  (transaction_hash text NOT NULL,
-   which int NOT NULL,
-   target text NOT NULL,
-   amount_n int NOT NULL,
-   amount_d int NOT NULL);
+	(transaction_hash text NOT NULL,
+	 which int NOT NULL,
+	 target text NOT NULL,
+	 amount_n int NOT NULL,
+	 amount_d int NOT NULL);
 SQL
 				end
 				@cache_db
@@ -174,12 +185,21 @@ SQL
 			"#<Transaction 0x#{hash}>"
 		end
 
-		def marshal_dump
-			[inputs, outputs, timestamp, signature]
+		def to_json(*args)
+			{inputs: inputs, outputs: outputs,
+		timestamp: timestamp, signature: signature}.to_json(*args)
 		end
 
-		def marshal_load(attrs)
-			@inputs, @outputs, @timestamp, @signature = attrs
+		def from_json(attrs)
+			@inputs = attrs['inputs']
+			@outputs = attrs['outputs'].map {|t, amt| [t, Rational.from_json(amt)]}
+			@timestamp = attrs['timestamp']
+			@signature = attrs['signature'] and Signature.from_json attrs['signature']
+			self
+		end
+
+		def self.from_json(attrs)
+			allocate.from_json(attrs)
 		end
 
 		private
@@ -208,7 +228,8 @@ SQL
 				return nil unless File.exists? fn
 				File.open fn do |file|
 					reader = Zlib::GzipReader.new file
-					block = block_cache[id] = Marshal.load reader
+					json = JSON.parse reader.read
+					block = block_cache[id] = Block.from_json json
 					reader.close
 				end
 				block
@@ -219,7 +240,7 @@ SQL
 				fn = File.join ChainDir, "block_#{id}.dat"
 				File.open fn, 'w' do |file|
 					writer = Zlib::GzipWriter.new file
-					Marshal.dump block, writer
+					writer.write JSON.dump block
 					writer.close
 				end
 				block
@@ -280,12 +301,23 @@ SQL
 			"#<Block 0x#{hash}>"
 		end
 
-		def marshal_dump
-			[txns, prev, timestamp, nonce, index]
+		def to_json(*args)
+			{txns: txns, prev: prev,
+		timestamp: timestamp,
+		nonce: nonce, index: index}.to_json(*args)
 		end
 
-		def marshal_load(attrs)
-			@txns, @prev, @timestamp, @nonce, @index = attrs
+		def from_json(attrs)
+			@txns = attrs['txns'].map {|txn| Transaction.from_json txn}
+			@prev = attrs['prev']
+			@timestamp = attrs['timestamp']
+			@nonce = attrs['nonce']
+			@index = attrs['index']
+			self
+		end
+
+		def self.from_json(attrs)
+			allocate.from_json(attrs)
 		end
 
 		private
